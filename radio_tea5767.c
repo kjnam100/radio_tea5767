@@ -1,4 +1,9 @@
 /*
+ * Copyright (C) 2016 kjnam100@yahoo.co.kr
+ *
+ * Philips TEA5767 FM radion module for Raspberry pi
+ * http://blog.naver.com/kjnam100/220694105789
+ *
  * compile with gcc -lm -lwiringPi -o radio_tea5767 radio_tea5767.c
  */
 #include <wiringPi.h> 
@@ -76,6 +81,8 @@ int save_freq(double freq)
 	FILE *fd;
 	char s_freq[64];
 
+	if (freq < 76.0  || freq > 108.0) return -1;
+
 	if ((fd = fopen(TUNED_FREQ, "w")) == NULL)
 		return -1;
 
@@ -146,8 +153,9 @@ void set_freq(double freq, int hcc, int snc, unsigned char forcd_mono, int mute,
 
 	write(fd, radio, 5);
 
-	save_freq(freq);
 	if (standby) return;
+
+	save_freq(freq);
 
 	if (wait_ready() < 0) {
 		fprintf(stderr, "Fail to tune!\n");
