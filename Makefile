@@ -1,22 +1,16 @@
-CXXFLAGS=-Wall
+CC=gcc
+CFLAGS=-Wall
 OBJECTS=radio_tea5767.o
 BINARIES=radio_tea5767
-ALL_BINARIES=$(BINARIES)
-
-# Where our library resides. It is split between includes and the binary
-# library in lib
 LDFLAGS+= -lm -lwiringPi
 
 all : $(BINARIES)
 
-radio : radio_tea5767.o
-	$(CXX) $(CXXFLAGS) radio_tea5767.o -o $@ $(LDFLAGS)
-
-%.o : %.cc
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
+%.o : %.c
+	$(CC) $(CFLAGS) -c -o $@ $< $(LDFLAGS)
 
 clean:
-	rm -f $(OBJECTS) $(ALL_BINARIES)
+	rm -f $(OBJECTS) $(BINARIES)
 
 FORCE:
 .PHONY: FORCE
