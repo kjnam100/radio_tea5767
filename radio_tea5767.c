@@ -9,6 +9,7 @@
 #include <math.h>
 #include <string.h>
 #include <ctype.h>
+#include <libgen.h>
 
 #define READY_WAIT_TIME 15000
 #define MAX_STATION 256
@@ -20,7 +21,6 @@
 #define TUNED_FREQ "/var/local/radio/tuned_freq"
 #define MAX_STATION_NAME_LEN 128
 
-typedef unsigned char uchar;
 int fd;
 int dID = 0x60; // i2c Channel the device is on
 unsigned char frequencyH = 0;
@@ -325,7 +325,7 @@ int main(int argc, char *argv[])
 	size_t len;
 	int hcc, snc, mode = SEARCH_MODE_DEFAULT;
 
-	prog_name = argv[0];
+	prog_name = basename(argv[0]);
 
 	//open access to the board, send error msg if fails
 	if((fd = wiringPiI2CSetup(dID)) < 0)
