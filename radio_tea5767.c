@@ -20,7 +20,7 @@
 #define MAX_STATION 256
 #define HCC_DEFAULT 1	// High Cut Control
 #define SNC_DEFAULT 1	// Stereo Noise Cancelling(Signal dependant stereo)
-#define FORCE_MONO 0	// 1: force mono, 0: stereo on
+#define FORCED_MONO 0	// 1:forced mono, 0:stereo on
 #define SEARCH_MODE_DEFAULT 2	// 1: Low, 2: Middle, 3: High
 #define RADIO_STATION_INFO "/var/local/radio/radio_station"
 #define TUNED_FREQ "/var/local/radio/tuned_freq"
@@ -163,7 +163,7 @@ void set_freq(double freq, int hcc, int snc, unsigned char forcd_mono, int mute,
 	}
 }
 
-int search(int dir, int mode)
+int search(int dir, int mode, int forced_mono)
 {
 	unsigned char radio[5] = {0};
 	double freq;
@@ -188,7 +188,7 @@ int search(int dir, int mode)
 	radio[2] = 0x10; // high side LO injection is on,.
 	radio[2] |= (mode & 0x03) << 5; // high side LO injection is on,.
 	if (dir) radio[2] |= 0x80;	// search up/down
-	if (FORCE_MONO) radio[2] |= 0x08; 
+	if (forced_mono) radio[2] |= 0x08; 
 	radio[3] = 0x10; // Xtal is 32.768 kHz
 	//if (freq < 87.5) radio[3] |= 0x20;
 	if (HCC_DEFAULT) radio[3] |= 0x04;
@@ -198,12 +198,12 @@ int search(int dir, int mode)
 	write(fd, radio, 5);
 
 	wait_ready();
-	set_freq(get_freq(), HCC_DEFAULT, SNC_DEFAULT, FORCE_MONO, 0, 0); // unmute
+	set_freq(get_freq(), HCC_DEFAULT, SNC_DEFAULT, forced_mono, 0, 0); // unmute
 	
 	return 0;
 }
 
-void freq_scan(int mode)
+void freq_scan(int mode, int forced_mono)
 {
 	double freq = 87.5;
 	unsigned char stereo, level_adc;
@@ -213,21 +213,21 @@ void freq_scan(int mode)
 		unsigned char stereo;
 	} radio_station[MAX_STATION];
 
-	set_freq(freq, HCC_DEFAULT, SNC_DEFAULT, FORCE_MONO, 1, 0);
+	set_freq(freq, HCC_DEFAULT, SNC_DEFAULT, forced_mono, 1, 0);
 	wait_ready();
 	do {
-		if (search(1, mode)) break;
+		if (search(1, mode, forced_mono)) break;
 		get_status(&freq, &stereo, &level_adc);
 		if (freq >= 108.0) break;
 		radio_station[count].freq = freq;
 		radio_station[count].stereo = stereo;
 		printf("%2d : %3.1f MHz %s \tSignal Strength:%d/15\n", count + 1, freq, stereo ? "stereo" : "mono", level_adc);
 		count++;
-	} while(freq < 108.0);
+	} while(freq < 108.0 && count < MAX_STATION);
 
 	printf("Total %d radio stations\n", count);
 	if (count > 0)
-		set_freq(radio_station[0].freq, HCC_DEFAULT, SNC_DEFAULT, FORCE_MONO, 0, 0);
+		set_freq(radio_station[0].freq, HCC_DEFAULT, SNC_DEFAULT, forced_mono, 0, 0);
 }
 
 int get_station_info()
@@ -312,17 +312,18 @@ void preset_move(int dir)
 	}
 	else preset = 1; 
 
-	set_freq(station_info[preset].freq, HCC_DEFAULT, SNC_DEFAULT, FORCE_MONO, 0, 0);
+	set_freq(station_info[preset].freq, HCC_DEFAULT, SNC_DEFAULT, FORCED_MONO, 0, 0);
 }
 
 void usage() 
 {
-	fprintf(stderr, "Usage:\t%s [set frequency [hcc snc]] [frequency]\n", prog_name);
+	fprintf(stderr, "Usage:\t%s [frequency|preset [hcc [snc [mono]]]]\n", prog_name);
 	fprintf(stderr, "\t%s status\n", prog_name);
 	fprintf(stderr, "\t%s prev|next\n", prog_name);
 	fprintf(stderr, "\t%s scan [1|2|3] [stereo|mono]\n", prog_name);
 	fprintf(stderr, "\t%s up|down [1|2|3] [stereo|mono]\n", prog_name);
 	fprintf(stderr, "\t%s stepup|stepdown\n", prog_name);
+	fprintf(stderr, "\t%s stereo|mono\n", prog_name);
 	fprintf(stderr, "\t%s mute|unmute|on|off\n", prog_name);
 	exit(1);
 }
@@ -331,7 +332,8 @@ int main(int argc, char *argv[])
 {
 	double freq;
 	size_t len;
-	int hcc, snc, mode = SEARCH_MODE_DEFAULT;
+	int hcc = HCC_DEFAULT, snc = SNC_DEFAULT;
+	int forced_mono = FORCED_MONO, mode = SEARCH_MODE_DEFAULT;
 
 	prog_name = basename(argv[0]);
 
@@ -343,7 +345,7 @@ int main(int argc, char *argv[])
 
 	if (argc < 2) {
 		if ((freq = get_tuned_freq())) {
-			set_freq(freq, HCC_DEFAULT, SNC_DEFAULT, FORCE_MONO, 0, 0);
+			set_freq(freq, HCC_DEFAULT, SNC_DEFAULT, FORCED_MONO, 0, 0);
 			print_status();
 			printf("HCC: %s, SNC: %s\n", HCC_DEFAULT ? "On" : "Off", SNC_DEFAULT ? "On" : "Off");
 		}
@@ -352,29 +354,18 @@ int main(int argc, char *argv[])
 	}
 
 	len = strlen(argv[1]);
-	if (!strncmp(argv[1], "set", len)) {
-		hcc = HCC_DEFAULT; snc = SNC_DEFAULT;
-		if (argc <= 2) usage();
-		if (atoi(argv[2]) < 76)	usage(); // frequency
-		if (argc >= 4) {
-			if (atoi(argv[3]) != 0) hcc = 1;
-			else hcc = 0;
-			if (argc >= 5) {
-				if (atoi(argv[4]) != 0) snc = 1;
-				else snc = 0;
-			}
-		}
-		set_freq(strtod(argv[2], NULL), hcc, snc, FORCE_MONO, 0, 0);
-		print_status();
-		printf("HCC: %s, SNC: %s\n", hcc ? "On" : "Off", snc ? "On" : "Off");
-	}
-	else if (!strncmp(argv[1], "scan", len)) {
+	if (!strncmp(argv[1], "scan", len)) {
 		if (argc > 2) {
 			mode = atoi(argv[2]);
 			if (mode < 1) mode  = 1;
 			else if (mode > 3) mode = 3;
+			if (argc > 3) {
+				len = strlen(argv[3]);
+				if (!strncmp(argv[3], "mono", len)) forced_mono = 1;
+				else forced_mono = 0;
+			}
 		}
-		freq_scan(mode);
+		freq_scan(mode, forced_mono);
 	}
 	else if (!strncmp(argv[1], "status", len)) {
 		print_status();
@@ -387,51 +378,55 @@ int main(int argc, char *argv[])
 		preset_move(0);
 		print_status();
 	}
-	else if (!strncmp(argv[1], "up", len)) {
-		if (argc > 2) {
-			mode = atoi(argv[2]);
-			if (mode < 1) mode  = 1;
-			else if (mode > 3) mode = 3;
-		}
-		search(1, mode);
-		print_status();
-		save_freq(get_freq());
+	else if (!strncmp(argv[1], "stereo", len)) {
+		set_freq(get_freq(), HCC_DEFAULT, SNC_DEFAULT, 0, 0, 0);
 	}
-	else if (!strncmp(argv[1], "down", len)) {
+	else if (!strncmp(argv[1], "mono", len)) {
+		set_freq(get_freq(), HCC_DEFAULT, SNC_DEFAULT, 1, 0, 0);
+	}
+	else if (!strncmp(argv[1], "up", len) || !strncmp(argv[1], "down", len)) {
+		int dir;
+		if (!strncmp(argv[1], "up", len)) dir = 1;
+		else dir = 0;
 		if (argc > 2) {
 			mode = atoi(argv[2]);
 			if (mode < 1) mode  = 1;
 			else if (mode > 3) mode = 3;
+			if (argc > 3) {
+				len = strlen(argv[3]);
+				if (!strncmp(argv[3], "mono", len)) forced_mono = 1;
+				else forced_mono = 0;
+			}
 		}
-		search(0, mode);
+		search(dir, mode, forced_mono);
 		print_status();
 		save_freq(get_freq());
 	}
 	else if (!strncmp(argv[1], "stepup", len)) {
 		freq = get_freq() + 0.1;
 		if (freq < 76.0 || freq > 108.0) exit(2);
-		set_freq(get_freq()+0.1, HCC_DEFAULT, SNC_DEFAULT, FORCE_MONO, 0, 0);
+		set_freq(get_freq()+0.1, HCC_DEFAULT, SNC_DEFAULT, FORCED_MONO, 0, 0);
 		print_status();
 		save_freq(get_freq());
 	}
 	else if (!strncmp(argv[1], "stepdown", len)) {
 		freq = get_freq() - 0.1;
 		if (freq < 76.0 || freq > 108.0) exit(2);
-		set_freq(freq, HCC_DEFAULT, SNC_DEFAULT, FORCE_MONO, 0, 0);
+		set_freq(freq, HCC_DEFAULT, SNC_DEFAULT, FORCED_MONO, 0, 0);
 		print_status();
 		save_freq(get_freq());
 	}
 	else if (!strncmp(argv[1], "mute", len)) {
-		set_freq(get_freq(), HCC_DEFAULT, SNC_DEFAULT, FORCE_MONO, 1, 0);
+		set_freq(get_freq(), HCC_DEFAULT, SNC_DEFAULT, FORCED_MONO, 1, 0);
 	}
 	else if (!strncmp(argv[1], "unmute", len)) {
-		set_freq(get_freq(), HCC_DEFAULT, SNC_DEFAULT, FORCE_MONO, 0, 0);
+		set_freq(get_freq(), HCC_DEFAULT, SNC_DEFAULT, FORCED_MONO, 0, 0);
 	}
 	else if (!strncmp(argv[1], "off", len)) {
-		set_freq(get_freq(), HCC_DEFAULT, SNC_DEFAULT, FORCE_MONO, 0, 1);
+		set_freq(get_freq(), HCC_DEFAULT, SNC_DEFAULT, FORCED_MONO, 0, 1);
 	}
 	else if (!strncmp(argv[1], "on", len)) {
-		set_freq(get_freq(), HCC_DEFAULT, SNC_DEFAULT, FORCE_MONO, 0, 0);
+		set_freq(get_freq(), HCC_DEFAULT, SNC_DEFAULT, FORCED_MONO, 0, 0);
 	}
 	else {
 		int preset;
@@ -439,18 +434,28 @@ int main(int argc, char *argv[])
 		freq = strtod(argv[1], NULL);
 		preset = (int)freq - 1;
 
-		if (freq >= 76.0 && freq <= 108.0) {
-			set_freq(strtod(argv[1], NULL), HCC_DEFAULT, SNC_DEFAULT, FORCE_MONO, 0, 0);
+		if ((freq >= 76.0 && freq <= 108.0) || (preset >= 0 && preset < station_info_num)) {
+			if (freq >= 76.0 && freq <= 108.0) freq = strtod(argv[1], NULL);
+			else freq = station_info[preset].freq;
+
+			if (argc > 2) {
+				if (atoi(argv[2]) != 0) hcc = 1;
+				else hcc = 0;
+				if (argc > 3) {
+					if (atoi(argv[3]) != 0) snc = 1;
+					else snc = 0;
+					if (argc > 4) {
+						len = strlen(argv[4]);
+						if (!strncmp(argv[4], "mono", len)) forced_mono = 1;
+						else forced_mono = 0;
+					}
+				}
+			}
+			set_freq(freq, hcc, snc, forced_mono, 0, 0);
 			print_status();
-			printf("HCC: %s, SNC: %s\n", HCC_DEFAULT ? "On" : "Off", SNC_DEFAULT ? "On" : "Off");
+			printf("HCC: %s, SNC: %s\n", hcc ? "On" : "Off", snc ? "On" : "Off");
 		}
-		else if (preset >= 0 && preset < station_info_num) {
-			set_freq(station_info[preset].freq, HCC_DEFAULT, SNC_DEFAULT, FORCE_MONO, 0, 0);
-			print_status();
-			printf("HCC: %s, SNC: %s\n", HCC_DEFAULT ? "On" : "Off", SNC_DEFAULT ? "On" : "Off");
-		}
-		else
-			usage();
+		else usage();
 	}
 
 	close(fd);
