@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall
+CFLAGS=-Wall 
 OBJECTS=radio_tea5767.o
 BINARIES=radio_tea5767
 LDFLAGS+= -lm -lwiringPi
