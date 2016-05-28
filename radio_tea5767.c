@@ -233,7 +233,7 @@ void freq_scan(int mode, int forced_mono)
 int get_station_info()
 {
 	FILE *fd;
-	size_t len;
+	size_t len = 0;
 	int i, si, n;
 	double freq;
 	char *line = NULL;
@@ -338,8 +338,10 @@ int main(int argc, char *argv[])
 	prog_name = basename(argv[0]);
 
 	//open access to the board, send error msg if fails
-	if((fd = wiringPiI2CSetup(dID)) < 0)
+	if((fd = wiringPiI2CSetup(dID)) < 0) {
 		fprintf(stderr, "error opening i2c channel\n");
+		exit(1);
+	}
 
 	get_station_info();
 
